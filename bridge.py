@@ -86,4 +86,85 @@ def ensure_model(model_id):
     res = subprocess.run(["ollama", "list"], capture_output=True, text=True)
     if clean_id in res.stdout: return True
 
-    console.print(f"[bold cyan]📥 Downloading model '{clean_id}' (
+    # FIXED: Split long string to prevent syntax errors
+    msg = f"[bold cyan]📥 Downloading model '{clean_id}' (One-time setup)...[/bold cyan]"
+    console.print(msg)
+
+    try:
+        subprocess.run(["ollama", "pull", clean_id], check=True)
+        return True
+    except:
+        return False
+
+# --- 4. MENUS ---
+def settings_menu():
+    while True:
+        console.clear()
+        cfg = load_config()
+        t = Table(title="⚙️  Bridge Settings", show_header=True, header_style="bold magenta")
+        t.add_column("Opt", style="cyan", width=4)
+        t.add_column("Setting", style="white")
+        t.add_column("Value", style="dim green")
+        t.add_row("1", "Gemini Key", "********" if cfg.get("GEMINI_API_KEY") else "Not Set")
+        t.add_row("2", "Cloud Model", cfg.get("GEMINI_MODEL", "gemini/gemini-1.5-pro-latest"))
+        t.add_row("3", "Local Model", cfg.get("LOCAL_MODEL", "ollama/qwen2.5-coder:32b"))
+        t.add_row("4", "Back", "")
+        console.print(t)
+
+        c = Prompt.ask("Select", choices=["1","2","3","4"], default="4")
+        if c=="1": save_config({"GEMINI_API_KEY": Prompt.ask("New Key", password=True)})
+        elif c=="2": save_config({"GEMINI_MODEL": Prompt.ask("Model ID", default=cfg.get("GEMINI_MODEL"))})
+        elif c=="3": save_config({"LOCAL_MODEL": Prompt.ask("Model ID", default=cfg.get("LOCAL_MODEL"))})
+        elif c=="4": break
+
+def main():
+    if not load_config():
+        console.print(Panel("[bold cyan]Welcome to Bridge[/bold cyan]"))
+        save_config({
+            "GEMINI_API_KEY": Prompt.ask("Gemini API Key (optional)", password=True),
+            "GEMINI_MODEL": "gemini/gemini-1.5-pro-latest",
+            "LOCAL_MODEL": "ollama/qwen2.5-coder:32b"
+        })
+
+    # AUTO-INSTALL CHECKS
+    ensure_aider()
+
+    while True:
+        console.clear()
+        online = check_connection("8.8.8.8", 53)
+        ollama_up = check_connection("localhost", 11434)
+        cfg = load_config()
+
+        status = Text()
+        status.append(f"Internet: {'✅' if online else '❌'}  |  Ollama: {'✅' if ollama_up else '⚠️'}")
+        console.print(Panel(status, title="[bold magenta]BRIDGE v2.0[/bold magenta]", expand=False))
+
+        # Menu Options
+        cloud_ok = online and cfg.get("GEMINI_API_KEY")
+        console.print(f"[{'bold white' if cloud_ok else 'dim'}]1) Cloud (Gemini) [{'✅' if cloud_ok else '❌'}]")
+        console.print(f"[bold white]2) Local (Qwen)   [{'✅' if ollama_up else '⚡'}]")
+        console.print("[cyan]3) Settings ⚙️[/cyan]")
+        console.print("[red]q) Quit[/red]")
+
+        choice = Prompt.ask("\nChoose", choices=["1", "2", "3", "q"], default="1" if cloud_ok else "2")
+        if choice == "q": sys.exit(0)
+        if choice == "3": settings_menu(); continue
+
+        model = ""
+        env = os.environ.copy()
+
+        if choice == "1":
+            if not cloud_ok: continue
+            model = cfg.get("GEMINI_MODEL")
+            env["GEMINI_API_KEY"] = cfg.get("GEMINI_API_KEY")
+        elif choice == "2":
+            if not ensure_ollama(): continue
+            model = cfg.get("LOCAL_MODEL")
+            if not ensure_model(model): continue
+
+        console.print(f"\n[green]🚀 Launching {model}...[/green]")
+        try:
+            subprocess.run([get_aider_path(), "--model", model, "--architect", "--watch-files", "--no-auto-commits"], env=env)
+        except KeyboardInterrupt: pass
+
+if __name__ == "__main__": main()
