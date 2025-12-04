@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bridge-cli"
-version = "1.0.4"
+version = "1.0.5"
 description = "A smart switchboard for Local (Ollama) vs Cloud (Gemini) AI coding"
 dependencies = [
     "rich",
